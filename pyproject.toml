@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vocalize"
+version = "0.1.0"
+description = "Extract speech from videos — fast local transcription with faster-whisper"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "vocalize" }]
+keywords = ["whisper", "transcription", "video", "speech-to-text", "asr"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "faster-whisper>=1.0",
+    "ffmpeg-python>=0.2",
+]
+
+[project.optional-dependencies]
+web = ["fastapi>=0.100", "uvicorn[standard]>=0.23", "python-multipart>=0.0.6"]
+dev = ["pytest"]
+
+[project.scripts]
+vocalize = "vocalize.cli:main"
+vocalize-web = "vocalize.web_ui:launch"
+
+[tool.setuptools.packages.find]
+include = ["vocalize*"]
