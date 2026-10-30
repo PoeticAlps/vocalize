@@ -19,10 +19,14 @@ def run_pipeline(
     device: str | None = None,
     fmt: str = "txt",
     output: str | Path | None = None,
+    progress_cb=None,
 ) -> TranscriptionResult:
     """Full pipeline: extract audio → transcribe → write output.
 
     Returns the result object regardless of whether output is written.
+
+    progress_cb: optional callable(float) — 转写阶段按 0.0~1.0 汇报进度,
+    透传给 vocalize.transcriber.transcribe;Web 面板用它显示真实进度。
     """
     video = Path(video_path)
     t0 = time.monotonic()
@@ -31,7 +35,8 @@ def run_pipeline(
     try:
         print(f"[2/3] Transcribing ({model_size} model) ...")
         segments, lang = transcribe(
-            wav, model_size=model_size, device=device, language=language
+            wav, model_size=model_size, device=device, language=language,
+            progress_cb=progress_cb,
         )
         result = TranscriptionResult(
             source=str(video),

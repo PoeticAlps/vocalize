@@ -55,26 +55,59 @@ def transcribe(file: UploadFile = File(...), req: str = Form(...)):
     body = TranscribeRequest(**json.loads(req))
     job_id = body.job_id
 
-    jobs[job_id] = {"status": "uploading", "error": None, "result": None, "_ts": time.time()}
-
+    # 收到文件即落盘、建任务、立刻返回 job_id —— 转写在后台线程执行,
+    # 避免长任务把 HTTP 请求挂到超时;前端轮询 /api/status/{job_id} 拿真实进度。
     suffix = Path(file.filename or "upload.mp4").suffix
     tmp = Path(tempfile.gettempdir()) / f"vocalize_{job_id}{suffix}"
     tmp.write_bytes(file.file.read())
 
+    jobs[job_id] = {
+        "status": "queued",
+        "progress": 0,
+        "message": "已接收，排队中",
+        "error": None,
+        "result": None,
+        "filename": file.filename or "video",
+        "_ts": time.time(),
+    }
+    worker = threading.Thread(
+        target=_run_job, args=(job_id, tmp, body), daemon=True
+    )
+    worker.start()
+
+    return JSONResponse({"job_id": job_id})
+
+
+def _run_job(job_id: str, tmp: Path, body: TranscribeRequest) -> None:
+    """后台执行完整流水线,并把真实进度写回任务表。"""
+    job = jobs[job_id]
     try:
-        jobs[job_id]["status"] = "processing"
+        job["status"] = "processing"
+        job["progress"] = 5
+        job["message"] = "提取音频中"
+        job["_ts"] = time.time()
+
+        def _on_progress(frac: float) -> None:
+            # transcriber 按 segment 迭代汇报 0.0~1.0,映射到 10~95%
+            job["progress"] = min(10 + int(frac * 85), 95)
+            job["message"] = "转写中"
+            job["_ts"] = time.time()
+
         result: TranscriptionResult = run_pipeline(
             tmp,
             model_size=body.model_size,
             language=body.language or None,
             fmt=body.fmt,
             output=None,
+            progress_cb=_on_progress,
         )
         formatter = FORMATTERS.get(body.fmt, FORMATTERS["txt"])
         text_output = formatter(result)
 
-        jobs[job_id].update(
+        job.update(
             status="done",
+            progress=100,
+            message="完成",
             _ts=time.time(),
             result={
                 "text": text_output,
@@ -83,16 +116,17 @@ def transcribe(file: UploadFile = File(...), req: str = Form(...)):
                     "duration": result.duration,
                     "segments": len(result.segments),
                     "fmt": body.fmt,
-                    "filename": file.filename or "video",
+                    "filename": job.get("filename") or "video",
                 },
             },
         )
     except Exception as exc:
-        jobs[job_id].update(status="error", _ts=time.time(), error=str(exc))
+        job.update(
+            status="error", progress=0, message="出错",
+            _ts=time.time(), error=str(exc),
+        )
     finally:
         tmp.unlink(missing_ok=True)
-
-    return JSONResponse({"job_id": job_id})
 
 
 @app.get("/api/status/{job_id}")
@@ -320,14 +354,13 @@ runBtn.addEventListener('click', async () => {
   runBtn.disabled = true;
   progressBar.classList.add('active');
   statusEl.textContent = '⏳ 上传中…';
-  progressFill.style.width = '10%';
+  progressFill.style.width = '3%';
+  statusEl.className = 'status';
 
   try {
     const resp = await fetch('/api/transcribe', { method: 'POST', body: formData });
     if (!resp.ok) throw new Error(await resp.text());
-    statusEl.textContent = '🔊 提取音频…';
-    progressFill.style.width = '30%';
-
+    // 服务端已建任务并立即返回,后续状态/进度全部由轮询驱动
     await pollStatus(jobId);
   } catch (err) {
     statusEl.textContent = '❌ ' + err.message;
@@ -338,25 +371,20 @@ runBtn.addEventListener('click', async () => {
 });
 
 async function pollStatus(jobId) {
-  const steps = [
-    { at: 0.3, text: '🔊 提取音频…' },
-    { at: 0.5, text: '🧠 加载模型…' },
-    { at: 0.7, text: '📝 转写中…' },
-  ];
-  let stepIdx = 0;
-
   while (true) {
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 1000));
     const resp = await fetch(`/api/status/${jobId}`);
+    if (!resp.ok) throw new Error('任务不存在或已过期');
     const data = await resp.json();
 
-    if (stepIdx < steps.length && data.status !== 'processing') {
-      progressFill.style.width = (steps[stepIdx].at * 100) + '%';
-      statusEl.textContent = steps[stepIdx].text;
-      stepIdx++;
-    }
-
-    if (data.status === 'done') {
+    if (data.status === 'queued') {
+      progressFill.style.width = Math.max(data.progress || 0, 3) + '%';
+      statusEl.textContent = '⏳ ' + (data.message || '排队中…');
+    } else if (data.status === 'processing') {
+      const pct = data.progress || 0;
+      progressFill.style.width = pct + '%';
+      statusEl.textContent = '🔊 ' + (data.message || '处理中…') + ' (' + pct + '%)';
+    } else if (data.status === 'done') {
       progressFill.style.width = '100%';
       statusEl.textContent = '✅ 完成!';
       statusEl.className = 'status success';
@@ -364,19 +392,12 @@ async function pollStatus(jobId) {
       runBtn.disabled = false;
       progressBar.classList.remove('active');
       return;
-    }
-    if (data.status === 'error') {
+    } else if (data.status === 'error') {
       progressBar.classList.remove('active');
       statusEl.textContent = '❌ ' + data.error;
       statusEl.className = 'status error';
       runBtn.disabled = false;
       return;
-    }
-    // Update progress bar if processing
-    if (data.status === 'processing' && stepIdx < steps.length) {
-      progressFill.style.width = (steps[stepIdx].at * 100) + '%';
-      statusEl.textContent = steps[stepIdx].text;
-      stepIdx++;
     }
   }
 }
@@ -396,7 +417,7 @@ function showResult(result) {
   const blob = new Blob([result.text], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const baseName = (result.meta.filename || 'video').replace(/\.[^.]+$/, '');
+  const baseName = (result.meta.filename || 'video').replace(/\\.[^.]+$/, '');
   a.href = url;
   a.download = baseName + '.' + extMap[fmt];
   a.className = 'download-btn';

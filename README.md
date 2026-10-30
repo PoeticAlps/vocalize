@@ -5,8 +5,8 @@ Extract speech from videos — fast, local transcription powered by [faster-whis
 ## Quick Start
 
 ```bash
-# Install core (CLI)
-pip install vocalize
+# 从仓库根目录本地安装(CLI)
+pip install -e .
 
 # Transcribe a video
 vocalize my_video.mp4
@@ -15,17 +15,22 @@ vocalize my_video.mp4
 vocalize my_video.mp4 -m small -l zh -f srt -o subtitles.srt
 ```
 
+> 前置条件:系统需装有 [ffmpeg](https://ffmpeg.org/) 并在 PATH 中(macOS: `brew install ffmpeg`)。
+> pip 不会自动安装 ffmpeg。
+
 ## Web Panel (新手友好 🎨)
 
 ```bash
 # Install with web UI support
-pip install vocalize[web]
+pip install -e ".[web]"
 
 # Launch panel
 vocalize-web
 ```
 
 Then 打开浏览器访问 `http://localhost:8080`，拖入视频、选模型、点按钮即可。
+
+Web 模式流程:上传文件后任务立即进入队列(服务端在后台线程转写，不会阻塞请求)→ 页面轮询显示**真实进度百分比**(提取音频 → 按 segment 迭代的转写进度)→ 完成后在线预览并下载 txt / srt / json。模型只加载一次(按 model_size 缓存)，重复上传不再重新加载。
 
 ## Features
 
@@ -35,7 +40,8 @@ Then 打开浏览器访问 `http://localhost:8080`，拖入视频、选模型、
 | **Fast** | faster-whisper + CTranslate2 is 4x faster than stock Whisper |
 | **3 output formats** | `.txt` (plain text), `.srt` (subtitles), `.json` (structured) |
 | **Multi-language** | Auto-detect or force a language code (`zh`, `en`, `ja`, …) |
-| **GPU support** | CUDA, MPS (Apple Silicon), or pure CPU |
+| **GPU support** | CUDA GPU 或纯 CPU(CTranslate2 不支持 Apple MPS，macOS 上自动用 CPU int8) |
+| **No PyTorch** | 只依赖 faster-whisper/CTranslate2，不需要安装 PyTorch |
 
 ## CLI Options
 
@@ -44,7 +50,7 @@ vocalize <video> [-m MODEL] [-l LANG] [-d DEVICE] [-f FMT] [-o OUTPUT]
 
   -m, --model     tiny / base / small / medium / large-v3  (default: base)
   -l, --language  ISO-639-1 code (auto-detect if omitted)
-  -d, --device    cpu / cuda / mps (auto-detected if omitted)
+  -d, --device    cpu / cuda (auto-detected if omitted)
   -f, --format    txt / srt / json  (default: txt)
   -o, --output    output file path
 ```
@@ -93,12 +99,12 @@ print(result.full_text)
 ## Requirements
 
 - Python ≥ 3.9
-- ffmpeg
-- faster-whisper + PyTorch (installed automatically via pip)
+- ffmpeg（需自行安装，pip 不会装系统依赖）
+- faster-whisper（含 CTranslate2，随 `pip install` 自动安装；无需 PyTorch）
 
 ### Web Panel additionally requires
 
-- fastapi, uvicorn, python-multipart (`pip install vocalize[web]`)
+- fastapi, uvicorn, python-multipart（`pip install -e ".[web]"`）
 
 ## License
 

@@ -31,7 +31,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "-d", "--device",
         default=None,
-        choices=["cpu", "cuda", "mps"],
+        choices=["cpu", "cuda"],
         help="Compute device (auto-detected if omitted).",
     )
     p.add_argument(
