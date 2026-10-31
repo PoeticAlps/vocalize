@@ -4,15 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vocalize"
-version = "0.1.0"
+version = "0.2.0"
 description = "Extract speech from videos — fast local transcription with faster-whisper"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [{ name = "vocalize" }]
+authors = [{ name = "PoeticAlps" }]
 keywords = ["whisper", "transcription", "video", "speech-to-text", "asr"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
